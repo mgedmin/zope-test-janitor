@@ -9,6 +9,7 @@ import argparse
 import doctest
 import fileinput
 import html
+import logging
 import os
 import re
 import sys
@@ -23,11 +24,14 @@ from urllib.error import HTTPError
 import lxml.html
 
 
+log = logging.getLogger('zope-test-janitor')
+
+
 DATE_PATTERN = re.compile(
     r'^Date: (.*)$')
 
 TITLE_PATTERN = re.compile(
-    r'^\[\d+\]\s*([A-Z].*)')
+    r'^(\[\d+\]\s*[A-Z].*)')
 
 URL_PATTERN = re.compile(
     r'^\s+(https://mail.zope.org/pipermail/zope-tests/.*\.html)')
@@ -62,9 +66,11 @@ def get_from_cache(filename, max_age):
 
 def get(url):
     try:
+        log.info('Downloading %s', url)
         with urlopen(url) as f:
             return f.read()
-    except HTTPError:
+    except HTTPError as e:
+        log.debug('Download of %s failed: %s', url, e)
         return b''
 
 
@@ -73,10 +79,13 @@ def cached_get(url, max_age=ONE_DAY):
     body = get_from_cache(fn, max_age)
     if body is None:
         if not os.path.isdir(CACHE_DIR):
+            log.debug('Creating cache directory %s', CACHE_DIR)
             os.makedirs(CACHE_DIR)
         body = get(url)
         with open(fn, 'wb') as f:
             f.write(body)
+    else:
+        log.debug('Using cached copy of %s', url)
     return body
 
 
@@ -345,7 +354,8 @@ def main():
     parser = argparse.ArgumentParser(
         description=__doc__.strip().partition('\n\n')[-1])
     parser.add_argument('files', metavar='filename', nargs='*')
-    parser.add_argument('-v', '--verbose', action='store_true')
+    parser.add_argument('-v', '--verbose', action='count', default=1)
+    parser.add_argument('-q', '--quiet', action='count', default=0)
     parser.add_argument('--selftest', action='store_true')
     parser.add_argument('--pdb', action='store_true')
     parser.add_argument('--pm', action='store_true')
@@ -357,6 +367,13 @@ def main():
 
     if sys.stdin.isatty() and not args.files:
         parser.error("supply a filename or pipe something to stdin")
+
+    root = logging.getLogger()
+    root.addHandler(logging.StreamHandler(sys.stdout))
+    verbosity = args.verbose - args.quiet
+    root.setLevel(logging.ERROR if verbosity < 1 else
+                  logging.INFO if verbosity == 1 else
+                  logging.DEBUG)
 
     report = Report()
     summary_email = list(fileinput.input(args.files))
@@ -371,8 +388,7 @@ def main():
     if args.pdb:
         import pdb; pdb.set_trace()
     filename = report.write()
-    if args.verbose:
-        print(filename)
+    log.debug("Created %s", filename)
     webbrowser.open(filename)
 
 
