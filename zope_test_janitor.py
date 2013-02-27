@@ -5,6 +5,11 @@ Usage: zope-test-janitor < email.txt
 Pipe an email from the Zope tests summarizer to it, get back an HTML report.
 """
 
+__version__ = '0.2'
+__author__ = 'Marius Gedminas <marius@gedmin.as>'
+__url__ = 'https://gist.github.com/mgedmin/4995950'
+__licence__ = 'GPL v2 or later' # or ask me for MIT
+
 import argparse
 import doctest
 import fileinput
@@ -14,6 +19,7 @@ import os
 import re
 import sys
 import tempfile
+import textwrap
 import time
 import unittest
 import webbrowser
@@ -101,47 +107,119 @@ def tostring(etree):
 
 
 class Failure(object):
+
+    # public API: information about the error email
+    title = None        # subject
+    url = None          # link to mailman archive page of the email
+    pre = None          # email body text as HTML markup within '<pre>..</pre>'
+    # if buildbot/jenkins detected:
+    build_number = None             # number of the build
+    build_link = None               # link to build page
+    console_text = None             # console output, if jenkins
+    buildbot_steps = None           # list of buildbot steps, if buildbot
+    # peeking to the future
+    last_build_link = None          # link to last build page
+    last_build_number = None        # number of the last build
+    last_console_text = None        # console output, if jenkins
+    last_build_steps = None         # list of buildbot steps, if buildbot
+    last_build_successful = None    # was the last build successful?
+
     def __init__(self, title, url):
         self.title = title
         self.url = url
-        self.body = None
-        self.etree = None
-        self.pre = None
-        self.first_link = None
-        self.first_link_body = None
-        self.buildbot_steps = []
-        self.console_text = None
 
     def __repr__(self):
         return '{0.__class__.__name__}({0.title!r}, {0.url!r})'.format(self)
 
     def analyze(self):
-        self.etree = parse(self.url)
-        self.pre = tostring(self.etree.xpath('//pre')[0])
-        links = self.etree.xpath('//pre/a')
-        if links:
-            self.first_link = links[0].get('href')
-        if self.first_link and BUILDER_URL.match(self.first_link):
-            # always get latest build results please
-            self.first_link = self.first_link.rpartition('/')[0] + '/-1'
-            self.first_link_etree = parse(self.first_link)
-            self.parse_buildbot()
-        if self.first_link and JENKINS_URL.match(self.first_link):
-            self.first_link = self.first_link.rpartition('/')[0].rpartition('/')[0] + '/lastBuild/'
-            self.console_text = cached_get(self.first_link + 'consoleText').decode()
+        self.pre, first_link = self.parse_email(self.url)
+        if self.is_buildbot_link(first_link):
+            self.build_link, _ = self.parse_buildbot_link(
+                first_link, latest=False)
+            self.last_build_link, _ = self.parse_buildbot_link(
+                first_link, latest=True)
+            self.buildbot_steps, self.build_number = \
+                    self.parse_buildbot(self.build_link)
+            self.last_build_steps, self.last_build_number = \
+                    self.parse_buildbot(self.last_build_link)
+            self.last_build_successful = self.buildbot_success(
+                self.last_build_steps)
+        if self.is_jenkins_link(first_link):
+            self.build_link, self.build_number = self.parse_jenkins_link(
+                first_link, latest=False)
+            self.last_build_link, _ = self.parse_jenkins_link(
+                first_link, latest=True)
+            self.console_text = self.parse_jenkins(self.build_link)
+            self.last_console_text = self.parse_jenkins(self.last_build_link)
+            self.last_build_successful = self.jenkins_success(
+                self.last_console_text)
+            self.last_build_number = self.parse_jenkins_build_number(
+                self.last_build_link)
 
-    def parse_buildbot(self):
-        for step in self.first_link_etree.cssselect('div.result'):
+    def parse_email(self, url):
+        etree = parse(url)
+        pre = tostring(etree.xpath('//pre')[0])
+        links = etree.xpath('//pre/a')
+        if links:
+            return (pre, links[0].get('href'))
+        else:
+            return (pre, None)
+
+    def is_buildbot_link(self, url):
+        return bool(url and BUILDER_URL.match(url))
+
+    def parse_buildbot_link(self, url, latest):
+        # url is '.../buildnumber', i.e. has no trailing slash
+        assert self.is_buildbot_link(url)
+        if latest:
+            return (url.rpartition('/')[0] + '/-1', 'latest')
+        else:
+            return (url, url.rpartition('/')[-1])
+
+    def parse_buildbot(self, url):
+        etree = parse(url)
+        title = etree.xpath('//title/text()')[0]
+        build_number = title.rpartition('#')[-1]
+        steps = []
+        for step in etree.cssselect('div.result'):
             css_class = step.get('class') # "success result"|"failure result"
             step_title = step.cssselect('a')[0].text
             step_link_rel = step.cssselect('a')[0].get('href')
-            step_link = urljoin(self.first_link, step_link_rel) + '/logs/stdio'
+            step_link = urljoin(url, step_link_rel) + '/logs/stdio'
             step_etree = parse(step_link)
             spans = step_etree.cssselect('span.stdout, span.stderr')
             step_text = '<pre>{}</pre>'.format(''.join(map(tostring, spans)))
-            self.buildbot_steps.append((step_title, step_link, css_class,
-                                        step_text))
+            steps.append((step_title, step_link, css_class, step_text))
+        return steps, build_number
 
+    def buildbot_success(self, steps):
+        return all(css_class == "success result"
+                   for title, url, css_class, text in steps)
+
+    def is_jenkins_link(self, url):
+        return bool(url and JENKINS_URL.match(url))
+
+    def parse_jenkins_link(self, url, latest):
+        # url is '.../buildnumber/', i.e. has a trailing slash
+        assert self.is_jenkins_link(url)
+        if latest:
+            return (url.rpartition('/')[0].rpartition('/')[0] + '/lastBuild/',
+                    'latest')
+        else:
+            return (url, url.rpartition('/')[0].rpartition('/')[-1])
+
+    def parse_jenkins_build_number(self, url):
+        etree = parse(url)
+        title = etree.xpath('//title/text()')[0]
+        build_number = title.rpartition('#')[-1].partition(' ')[0]
+        return build_number
+
+    def parse_jenkins(self, url):
+        # url is '.../buildnumber/', i.e. has a trailing slash
+        return cached_get(url + 'consoleText').decode()
+
+    def jenkins_success(self, console_text):
+        return console_text.rstrip().endswith('Finished: SUCCESS')
 
 
 CSS = """
@@ -165,6 +243,17 @@ h2 {
   color: white;
   padding: 4px;
   margin: 12px -8px 0 -8px;
+}
+
+a.headerlink:link,
+a.headerlink:visited {
+  visibility: hidden;
+  color: #eee;
+  text-decoration: none;
+}
+
+h2:hover > a.headerlink {
+  visibility: visible;
 }
 
 a.result {
@@ -191,21 +280,29 @@ pre {
   margin-left: 1em;
 }
 pre .collapsible {
-  background: white;
+  background: #f0f0f0;
+  color: green;
   border-top: 1px solid #eee;
-  border-bottom: 1px solid #eee;
+  border-bottom: none;
   margin: 0 -6px 0 -6px;
   padding: 4px;
   display: block;
 }
+pre .collapsible.collapsed {
+  border-bottom: 1px solid #eee;
+}
 pre article {
-  border: 1px dotted #eee;
+  border-bottom: 1px solid #eee;
+  border-top: none;
   background: #f0f0f0;
   margin: 0 -6px 0 -6px;
   padding: 0 6px; 0 6px;
 }
 span.stderr {
   color: red;
+}
+article .steps {
+  margin-left: 1em;
 }
 """
 
@@ -263,7 +360,7 @@ class Report:
         for failure in self.failures:
             failure.analyze()
 
-    def truncate_pre(self, pre, first=4, last=20, min_middle=5, escape=True):
+    def truncate_pre(self, pre, first=4, last=30, min_middle=5, escape=True):
         if escape:
             pre = '<pre>{}</pre>'.format(html.escape(pre))
         lines = pre.splitlines(True)
@@ -280,73 +377,130 @@ class Report:
                 '</article>' +
                 ''.join(last_bit))
 
+    def format_buildbot_steps(self, steps):
+        return ' '.join('<a class="{css_class}" href="{url}">{title}</a>'
+                                .format(title=html.escape(title),
+                                        css_class=html.escape(css_class),
+                                        url=html.escape(url))
+                        for title, url, css_class, text in steps)
+
+    def emit(self, html, **kw):
+        self.f.write(html.format(**kw))
+
+    def page_header(self, title):
+        self.emit(textwrap.dedent('''\
+            <html>
+              <head>
+                <meta charset="UTF-8">
+                <title>{title}</title>
+                <style type="text/css">{css}</style>
+                <script type="text/javascript" src="{jquery}"></script>
+                <script type="text/javascript">{js}</script>
+              </head>
+            <body>
+              <h1>{title}</h1>
+        '''), title=html.escape(title), css=CSS, jquery=JQUERY_URL, js=JAVASCRIPT)
+
+    def failure_header(self, failure, id):
+        self.emit(
+            '  <h2 id="{id}" class="collapsible">\n'
+            '    {title}\n'
+            '    <a href="#{id}" class="headerlink">¶</a>\n'
+            '  </h2>\n'
+            '  <article>\n',
+            id=id, title=html.escape(failure.title))
+
+    def summary_email(self, failure):
+        self.emit(
+            '    <p class="{css_class}"><a href="{url}">Summary email</a></p>\n'
+            '    <article>{pre}</article>\n',
+            url=html.escape(failure.url),
+            css_class="collapsible collapsed"
+                            if failure.buildbot_steps or failure.console_text
+                            else "collapsible",
+            pre=self.truncate_pre(failure.pre, escape=False))
+
+    def console_text(self, title, build, url, text, collapsed=False, **kw):
+        self.emit(
+            '    <p class="{css_class}">%s</p>\n'
+            '    <article>{console_text}</article>\n' % title,
+            css_class="collapsible collapsed" if collapsed
+                            else "collapsible",
+            build=build,
+            url=url,
+            console_text=self.truncate_pre(text, escape=True),
+            **kw)
+
+    def buildbot_steps(self, title, build, url, steps, collapsed=False, **kw):
+        self.emit(
+            '    <p class="{css_class}">%s</p>'
+            '    <article class="steps">\n' % title,
+            css_class="collapsible collapsed" if collapsed
+                            else "collapsible",
+            build=build,
+            url=url,
+            steps=self.format_buildbot_steps(steps),
+            **kw)
+        for title, url, css_class, text in steps:
+            self.emit(
+                '    <p class="{css_class}">{title}</p>\n'
+                '    <article>{pre}</article>\n',
+                css_class="collapsible" if "failure" in css_class
+                                        else "collapsible collapsed",
+                title=html.escape(title),
+                pre=self.truncate_pre(text, escape=False))
+        self.emit(
+            '    </article>\n')
+
+    def failure_footer(self):
+        self.emit(
+            '  </article>\n')
+
+    def page_footer(self):
+        self.emit(textwrap.dedent('''\
+              <hr>
+              <p id="footer">{n} failures today.</p>
+            </body>
+            </html>
+        '''), n=len(self.failures))
+
     def write(self, filename=None):
         if not filename:
             filename = os.path.join(tempfile.mkdtemp(
                 prefix='zope-test-janitor-'), 'report.html')
-        with open(filename, 'w') as f:
-            title = 'Zope tests for {}'.format(self.date)
-            f.write(
-                '<html>\n'
-                '  <head>\n'
-                '    <meta charset="UTF-8">\n'
-                '    <title>{title}</title>\n'
-                '    <style type="text/css">{css}</style>\n'
-                '    <script type="text/javascript" src="{jquery}"></script>\n'
-                '    <script type="text/javascript">{js}</script>\n'
-                '  </head>\n'
-                '<body>\n'
-                '  <h1>{title}</h1>\n'
-                '\n'
-                    .format(title=html.escape(title),
-                            css=CSS,
-                            jquery=JQUERY_URL,
-                            js=JAVASCRIPT)
-            )
-            for failure in self.failures:
-                f.write(
-                    '  <h2 class="collapsible">{title}</h2>\n'
-                    '  <article>\n'
-                    '    <p class="{css_class}"><a href="{url}">Summary email</a></p>\n'
-                    '    <article>{pre}</article>\n'
-                        .format(title=html.escape(failure.title),
-                                url=html.escape(failure.url),
-                                css_class="collapsible collapsed"
-                                                if failure.buildbot_steps or failure.console_text
-                                                else "collapsible",
-                                pre=self.truncate_pre(failure.pre, escape=False))
-                )
+        with open(filename, 'w') as self.f:
+            self.page_header('Zope tests for {}'.format(self.date))
+            for n, failure in enumerate(self.failures, 1):
+                self.failure_header(failure, 'f{}'.format(n))
+                self.summary_email(failure)
                 if failure.console_text:
-                    f.write('    <p class="collapsible">Console text from last build:</p>\n'
-                            '    <article>{}</article>\n'
-                                .format(self.truncate_pre(failure.console_text,
-                                                          escape=True)))
+                    self.console_text('Console text from <a href="{url}">{build}</a>:',
+                                      build='build #%s' % failure.build_number,
+                                      url=failure.build_link,
+                                      text=failure.console_text)
+                    if failure.last_build_number != failure.build_number:
+                        self.console_text('<a href="{url}">{build}</a> was {successful}:',
+                                          build='Last build (#%s)' % failure.last_build_number,
+                                          successful="successful" if failure.last_build_successful
+                                                     else "also unsuccessful",
+                                          url=failure.last_build_link,
+                                          text=failure.last_console_text,
+                                          collapsed=True)
                 if failure.buildbot_steps:
-                    f.write('    <p>Buildbot steps from latest build:')
-                    for title, url, css_class, text in failure.buildbot_steps:
-                        f.write(
-                            ' <a class="{css_class}" href="{url}">{title}</a>'
-                                .format(title=html.escape(title),
-                                        css_class=html.escape(css_class),
-                                        url=html.escape(url)))
-                    f.write('</p>\n')
-                    for title, url, css_class, text in failure.buildbot_steps:
-                        f.write('    <p class="collapsible{}">{}</p>\n'
-                                '    <article>{}</article>\n'
-                                .format("" if "failure" in css_class
-                                           else " collapsed",
-                                        html.escape(title),
-                                        self.truncate_pre(text, escape=False)))
-                f.write(
-                    '  </article>\n'
-                )
-            f.write(
-                '  <hr>\n'
-                '  <p id="footer">{n} failures today.</p>\n'
-                '</body>\n'
-                '</html>\n'
-                    .format(n=len(self.failures))
-            )
+                    self.buildbot_steps('Buildbot steps from <a href="{url}">{build}</a>: {steps}',
+                                        build='build #%s' % failure.build_number,
+                                        url=failure.build_link,
+                                        steps=failure.buildbot_steps)
+                    if failure.last_build_number != failure.build_number:
+                        self.buildbot_steps('<a href="{url}">{build}</a> was {successful}: {steps}',
+                                            build='Last build (#%s)' % failure.last_build_number,
+                                            successful="successful" if failure.last_build_successful
+                                                       else "also unsuccessful",
+                                            url=failure.last_build_link,
+                                            steps=failure.last_build_steps,
+                                            collapsed=True)
+                self.failure_footer()
+            self.page_footer()
         return filename
 
 
@@ -417,7 +571,7 @@ def doctest_TITLE_PATTERN():
         >>> m is not None
         True
         >>> list(m.groups())
-        ['FAIL everything is bad']
+        ['[42] FAIL everything is bad']
 
         >>> m = TITLE_PATTERN.match(
         ...     'Anything else')
@@ -443,6 +597,56 @@ def doctest_URL_PATTERN():
 
     """
 
+def doctest_Failure_is_buildbot_link():
+    """Test for Failure.is_buildbot_link
+
+        >>> f = Failure(None, None)
+        >>> f.is_buildbot_link('http://winbot.zope.org/builders/z3c.authenticator_py_265_32/builds/185')
+        True
+
+        >>> f.is_buildbot_link('http://jenkins.starzel.de/job/zopetoolkit_trunk/184/')
+        False
+
+    """
+
+def doctest_Failure_parse_buildbot_link():
+    """Test for Failure.parse_buildbot_link
+
+        >>> f = Failure(None, None)
+        >>> f.parse_buildbot_link('http://winbot.zope.org/builders/z3c.authenticator_py_265_32/builds/185', latest=False)
+        ('http://winbot.zope.org/builders/z3c.authenticator_py_265_32/builds/185', '185')
+
+        >>> f.parse_buildbot_link('http://winbot.zope.org/builders/z3c.authenticator_py_265_32/builds/185', latest=True)
+        ('http://winbot.zope.org/builders/z3c.authenticator_py_265_32/builds/-1', 'latest')
+
+    """
+
+def doctest_Failure_is_jenkins_link():
+    """Test for Failure.is_jenkins_link
+
+        >>> f = Failure(None, None)
+        >>> f.is_jenkins_link('http://jenkins.starzel.de/job/zopetoolkit_trunk/184/')
+        True
+
+    Currently we assume the URL has a trailing slash
+
+        >>> f.is_jenkins_link('http://jenkins.starzel.de/job/zopetoolkit_trunk/184')
+        False
+
+    """
+
+def doctest_Failure_parse_jenkins_link():
+    """Test for Failure.parse_jenkins_link
+
+        >>> f = Failure(None, None)
+        >>> f.parse_jenkins_link('http://jenkins.starzel.de/job/zopetoolkit_trunk/184/', latest=False)
+        ('http://jenkins.starzel.de/job/zopetoolkit_trunk/184/', '184')
+
+        >>> f.parse_jenkins_link('http://jenkins.starzel.de/job/zopetoolkit_trunk/184/', latest=True)
+        ('http://jenkins.starzel.de/job/zopetoolkit_trunk/lastBuild/', 'latest')
+
+    """
+
 def doctest_Report_parse_email():
     r"""
 
@@ -453,7 +657,7 @@ def doctest_Report_parse_email():
         ...     ' https://mail.zope.org/pipermail/zope-tests/whatever.html\n',
         ... ])
         >>> report.failures
-        [Failure('FAIL: everything', 'https://mail.zope.org/pipermail/zope-tests/whatever.html')]
+        [Failure('[1] FAIL: everything', 'https://mail.zope.org/pipermail/zope-tests/whatever.html')]
 
     """
 
