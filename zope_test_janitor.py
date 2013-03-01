@@ -5,7 +5,7 @@ Usage: zope-test-janitor < email.txt
 Pipe an email from the Zope tests summarizer to it, get back an HTML report.
 """
 
-__version__ = '0.2'
+__version__ = '0.2.2'
 __author__ = 'Marius Gedminas <marius@gedmin.as>'
 __url__ = 'https://gist.github.com/mgedmin/4995950'
 __licence__ = 'GPL v2 or later' # or ask me for MIT
@@ -141,7 +141,9 @@ class Failure(object):
             self.buildbot_steps, self.build_number = \
                     self.parse_buildbot(self.build_link)
             self.last_build_steps, self.last_build_number = \
-                    self.parse_buildbot(self.last_build_link)
+                    self.parse_buildbot(self.last_build_link,
+                                        skip_if=self.build_number,
+                                        normalize_url=True)
             self.last_build_successful = self.buildbot_success(
                 self.last_build_steps)
         if self.is_jenkins_link(first_link):
@@ -150,11 +152,14 @@ class Failure(object):
             self.last_build_link, _ = self.parse_jenkins_link(
                 first_link, latest=True)
             self.console_text = self.parse_jenkins(self.build_link)
-            self.last_console_text = self.parse_jenkins(self.last_build_link)
-            self.last_build_successful = self.jenkins_success(
-                self.last_console_text)
             self.last_build_number = self.parse_jenkins_build_number(
                 self.last_build_link)
+            if self.last_build_number != self.build_number:
+                url = self.normalize_jenkins_url(self.last_build_link,
+                                                 self.last_build_number)
+                self.last_console_text = self.parse_jenkins(url)
+                self.last_build_successful = self.jenkins_success(
+                    self.last_console_text)
 
     def parse_email(self, url):
         etree = parse(url)
@@ -176,15 +181,28 @@ class Failure(object):
         else:
             return (url, url.rpartition('/')[-1])
 
-    def parse_buildbot(self, url):
+    def normalize_buildbot_url(self, url, build_number):
+        assert url.endswith('/-1')
+        assert build_number.isdigit()
+        return url.rpartition('/')[0] + '/%s' % build_number
+
+    def parse_buildbot(self, url, skip_if=None, normalize_url=False):
         etree = parse(url)
         title = etree.xpath('//title/text()')[0]
         build_number = title.rpartition('#')[-1]
         steps = []
+        if skip_if is not None and build_number == skip_if:
+            return steps, build_number
+        if normalize_url:
+            url = self.normalize_buildbot_url(url, build_number)
         for step in etree.cssselect('div.result'):
             css_class = step.get('class') # "success result"|"failure result"
             step_title = step.cssselect('a')[0].text
             step_link_rel = step.cssselect('a')[0].get('href')
+            if normalize_url:
+                assert step_link_rel.startswith('-1/')
+                step_link_rel = '%s/%s' % (build_number,
+                                           step_link_rel.partition('/')[-1])
             step_link = urljoin(url, step_link_rel) + '/logs/stdio'
             step_etree = parse(step_link)
             spans = step_etree.cssselect('span.stdout, span.stderr')
@@ -207,6 +225,11 @@ class Failure(object):
                     'latest')
         else:
             return (url, url.rpartition('/')[0].rpartition('/')[-1])
+
+    def normalize_jenkins_url(self, url, build_number):
+        assert url.endswith('/lastBuild/')
+        assert build_number.isdigit()
+        return url.rpartition('/')[0].rpartition('/')[0] + '/%s/' % build_number
 
     def parse_jenkins_build_number(self, url):
         etree = parse(url)
@@ -473,32 +496,35 @@ class Report:
             for n, failure in enumerate(self.failures, 1):
                 self.failure_header(failure, 'f{}'.format(n))
                 self.summary_email(failure)
+                have_last_build = failure.last_build_number != failure.build_number
                 if failure.console_text:
                     self.console_text('Console text from <a href="{url}">{build}</a>:',
                                       build='build #%s' % failure.build_number,
                                       url=failure.build_link,
-                                      text=failure.console_text)
-                    if failure.last_build_number != failure.build_number:
+                                      text=failure.console_text,
+                                      collapsed=have_last_build)
+                    if have_last_build:
                         self.console_text('<a href="{url}">{build}</a> was {successful}:',
                                           build='Last build (#%s)' % failure.last_build_number,
                                           successful="successful" if failure.last_build_successful
                                                      else "also unsuccessful",
                                           url=failure.last_build_link,
                                           text=failure.last_console_text,
-                                          collapsed=True)
+                                          collapsed=failure.last_build_successful)
                 if failure.buildbot_steps:
                     self.buildbot_steps('Buildbot steps from <a href="{url}">{build}</a>: {steps}',
                                         build='build #%s' % failure.build_number,
                                         url=failure.build_link,
-                                        steps=failure.buildbot_steps)
-                    if failure.last_build_number != failure.build_number:
+                                        steps=failure.buildbot_steps,
+                                        collapsed=have_last_build)
+                    if have_last_build:
                         self.buildbot_steps('<a href="{url}">{build}</a> was {successful}: {steps}',
                                             build='Last build (#%s)' % failure.last_build_number,
                                             successful="successful" if failure.last_build_successful
                                                        else "also unsuccessful",
                                             url=failure.last_build_link,
                                             steps=failure.last_build_steps,
-                                            collapsed=True)
+                                            collapsed=failure.last_build_successful)
                 self.failure_footer()
             self.page_footer()
         return filename
