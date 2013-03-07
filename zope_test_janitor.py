@@ -5,7 +5,7 @@ Usage: zope-test-janitor < email.txt
 Pipe an email from the Zope tests summarizer to it, get back an HTML report.
 """
 
-__version__ = '0.2.2'
+__version__ = '0.3'
 __author__ = 'Marius Gedminas <marius@gedmin.as>'
 __url__ = 'https://gist.github.com/mgedmin/4995950'
 __licence__ = 'GPL v2 or later' # or ask me for MIT
@@ -50,6 +50,14 @@ BUILDER_URL = re.compile(
 
 
 CACHE_DIR = os.path.expanduser('~/.cache/zope-test-janitor')
+
+
+KNOWN_FAILURES = [
+    ("Error: Couldn't open /home/zope/.jenkins/jobs/zopetoolkit_trunk/workspace/development-python.cfg",
+     "bad jenkins config"),
+    ("ERROR: 'xslt-config' is not recognized as an internal or external command",
+     "no lxml on winbot"),
+]
 
 
 def cache_filename(url):
@@ -123,6 +131,8 @@ class Failure(object):
     last_console_text = None        # console output, if jenkins
     last_build_steps = None         # list of buildbot steps, if buildbot
     last_build_successful = None    # was the last build successful?
+    # summary
+    tag = None                      # known failure tag
 
     def __init__(self, title, url):
         self.title = title
@@ -160,6 +170,7 @@ class Failure(object):
                 self.last_console_text = self.parse_jenkins(url)
                 self.last_build_successful = self.jenkins_success(
                     self.last_console_text)
+        self.look_for_known_failures()
 
     def parse_email(self, url):
         etree = parse(url)
@@ -212,7 +223,7 @@ class Failure(object):
 
     def buildbot_success(self, steps):
         return all(css_class == "success result"
-                   for title, url, css_class, text in steps)
+                   for title, url, css_class, text in steps) and steps
 
     def is_jenkins_link(self, url):
         return bool(url and JENKINS_URL.match(url))
@@ -243,6 +254,32 @@ class Failure(object):
 
     def jenkins_success(self, console_text):
         return console_text.rstrip().endswith('Finished: SUCCESS')
+
+    def look_for_known_failures(self):
+        if self.last_build_successful:
+            self.tag = 'last build successful'
+            return
+        if self.last_console_text:
+            self.analyze_text(self.last_console_text)
+        else:
+            self.analyze_text(self.console_text)
+        if self.last_build_steps:
+            self.analyze_steps(self.last_build_steps)
+        else:
+            self.analyze_steps(self.buildbot_steps)
+
+    def analyze_steps(self, steps):
+        if not steps:
+            return
+        for step_title, step_link, css_class, step_text in steps:
+            self.analyze_text(step_text)
+
+    def analyze_text(self, text):
+        if not text:
+            return
+        for sign, tag in KNOWN_FAILURES:
+            if sign in text:
+                self.tag = tag
 
 
 CSS = """
@@ -425,13 +462,18 @@ class Report:
         '''), title=html.escape(title), css=CSS, jquery=JQUERY_URL, js=JAVASCRIPT)
 
     def failure_header(self, failure, id):
+        title = failure.title
+        if failure.tag:
+            title += ' - ' + failure.tag
         self.emit(
-            '  <h2 id="{id}" class="collapsible">\n'
+            '  <h2 id="{id}" class="{css_class}">\n'
             '    {title}\n'
             '    <a href="#{id}" class="headerlink">¶</a>\n'
             '  </h2>\n'
             '  <article>\n',
-            id=id, title=html.escape(failure.title))
+            id=id,
+            css_class="collapsible collapsed" if failure.tag else "collapsible",
+            title=html.escape(title))
 
     def summary_email(self, failure):
         self.emit(
