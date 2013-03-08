@@ -384,6 +384,9 @@ pre article {
   margin: 0 -6px 0 -6px;
   padding: 0 6px; 0 6px;
 }
+span.error {
+  color: red;
+}
 span.header {
   color: #888;
 }
@@ -449,9 +452,14 @@ class Report:
         for failure in self.failures:
             failure.analyze()
 
-    def truncate_pre(self, pre, first=4, last=30, min_middle=5, escape=True):
-        if escape:
-            pre = '<pre>{}</pre>'.format(html.escape(pre))
+    def format_console_text(self, text):
+        return '<pre>{}</pre>'.format(
+            re.sub(r'^(Traceback.*(\n .*)*\n[^ ].*)',
+                   r'<span class="error">\1</span>',
+                   html.escape(text),
+                   flags=re.MULTILINE))
+
+    def truncate_pre(self, pre, first=4, last=30, min_middle=5):
         lines = pre.splitlines(True)
         if len(lines) < first+min_middle+last:
             return pre
@@ -512,7 +520,7 @@ class Report:
             css_class="collapsible collapsed"
                             if failure.buildbot_steps or failure.console_text
                             else "collapsible",
-            pre=self.truncate_pre(failure.pre, escape=False))
+            pre=self.truncate_pre(failure.pre))
 
     def console_text(self, title, build, url, text, collapsed=False, **kw):
         self.emit(
@@ -522,7 +530,7 @@ class Report:
                             else "collapsible",
             build=build,
             url=url,
-            console_text=self.truncate_pre(text, escape=True),
+            console_text=self.truncate_pre(self.format_console_text(text)),
             **kw)
 
     def buildbot_steps(self, title, build, url, steps, collapsed=False, **kw):
@@ -542,7 +550,7 @@ class Report:
                 css_class="collapsible" if "failure" in step.css_class
                                         else "collapsible collapsed",
                 title=html.escape(step.title),
-                pre=self.truncate_pre(step.text, escape=False))
+                pre=self.truncate_pre(step.text))
         self.emit(
             '    </article>\n')
 
@@ -757,6 +765,36 @@ def doctest_Report_parse_email():
         ... ])
         >>> report.failures
         [Failure('[1] FAIL: everything', 'https://mail.zope.org/pipermail/zope-tests/whatever.html')]
+
+    """
+
+def doctest_Report_format_console_text():
+    """Test for Report.format_console_text
+
+        >>> report = Report()
+        >>> text = '''
+        ... + bin/test
+        ... blah blah blah
+        ... also <hehe markup> & stuff
+        ... when suddenly
+        ... Traceback (most recent call last):
+        ...   File something something
+        ...     code code
+        ... Exception: something happen!
+        ... and continued
+        ... '''
+        >>> print(report.format_console_text(text))
+        <pre>
+        + bin/test
+        blah blah blah
+        also &lt;hehe markup&gt; &amp; stuff
+        when suddenly
+        <span class="error">Traceback (most recent call last):
+          File something something
+            code code
+        Exception: something happen!</span>
+        and continued
+        </pre>
 
     """
 
