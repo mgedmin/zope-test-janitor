@@ -1,11 +1,11 @@
 #!/usr/bin/python3
 """
-Usage: zope-test-janitor < email.txt
+Usage: zope-test-janitor [-v|-q] [filename]
 
 Pipe an email from the Zope tests summarizer to it, get back an HTML report.
 """
 
-__version__ = '0.3.1'
+__version__ = '0.4'
 __author__ = 'Marius Gedminas <marius@gedmin.as>'
 __url__ = 'https://gist.github.com/mgedmin/4995950'
 __licence__ = 'GPL v2 or later' # or ask me for MIT
@@ -23,6 +23,7 @@ import textwrap
 import time
 import unittest
 import webbrowser
+from collections import namedtuple
 from urllib.request import urlopen
 from urllib.parse import quote, urljoin
 from urllib.error import HTTPError
@@ -114,6 +115,9 @@ def parse(url, max_age=ONE_DAY):
 
 def tostring(etree):
     return lxml.html.tostring(etree).decode()
+
+
+BuildStep = namedtuple('BuildStep', 'title link css_class text')
 
 
 class Failure(object):
@@ -224,14 +228,28 @@ class Failure(object):
                                            step_link_rel.partition('/')[-1])
             step_link = urljoin(url, step_link_rel) + '/logs/stdio'
             step_etree = parse(step_link)
-            spans = step_etree.cssselect('span.stdout, span.stderr')
-            step_text = '<pre>{}</pre>'.format(''.join(map(tostring, spans)))
-            steps.append((step_title, step_link, css_class, step_text))
+            step_text = self.prepare_step_text(step_etree)
+            steps.append(BuildStep(step_title, step_link, css_class, step_text))
         return steps, build_number
 
+    def prepare_step_text(self, step_etree):
+        spans = step_etree.cssselect('span.stdout, span.stderr')
+        step_meta = step_etree.cssselect('span.header')
+        command_line = exit_status = ''
+        if len(step_meta) >= 1:
+            first_line = step_meta[0].text.split('\n')[0].rstrip()
+            command_line = '<span class="header">{}</span>\n'.format(
+                html.escape(first_line))
+        if len(step_meta) >= 2:
+            first_line = step_meta[-1].text.split('\n')[0].rstrip()
+            exit_status = '<span class="header">{}</span>\n'.format(
+                html.escape(first_line))
+        return '<pre>{}</pre>'.format(''.join(
+            [command_line] + list(map(tostring, spans)) + [exit_status]))
+
     def buildbot_success(self, steps):
-        return all(css_class == "success result"
-                   for title, url, css_class, text in steps) and steps
+        return steps and all(step.css_class == "success result"
+                             for step in steps)
 
     def is_jenkins_link(self, url):
         return bool(url and JENKINS_URL.match(url))
@@ -277,10 +295,10 @@ class Failure(object):
             self.analyze_steps(self.buildbot_steps)
 
     def analyze_steps(self, steps):
-        if not steps:
+        if not steps: # could be None
             return
-        for step_title, step_link, css_class, step_text in steps:
-            self.analyze_text(step_text)
+        for step in steps:
+            self.analyze_text(step.text)
 
     def analyze_text(self, text):
         if not text:
@@ -366,6 +384,9 @@ pre article {
   margin: 0 -6px 0 -6px;
   padding: 0 6px; 0 6px;
 }
+span.header {
+  color: #888;
+}
 span.stderr {
   color: red;
 }
@@ -447,10 +468,10 @@ class Report:
 
     def format_buildbot_steps(self, steps):
         return ' '.join('<a class="{css_class}" href="{url}">{title}</a>'
-                                .format(title=html.escape(title),
-                                        css_class=html.escape(css_class),
-                                        url=html.escape(url))
-                        for title, url, css_class, text in steps)
+                                .format(title=html.escape(step.title),
+                                        css_class=html.escape(step.css_class),
+                                        url=html.escape(step.link))
+                        for step in steps)
 
     def emit(self, html, **kw):
         self.f.write(html.format(**kw))
@@ -514,14 +535,14 @@ class Report:
             url=url,
             steps=self.format_buildbot_steps(steps),
             **kw)
-        for title, url, css_class, text in steps:
+        for step in steps:
             self.emit(
                 '    <p class="{css_class}">{title}</p>\n'
                 '    <article>{pre}</article>\n',
-                css_class="collapsible" if "failure" in css_class
+                css_class="collapsible" if "failure" in step.css_class
                                         else "collapsible collapsed",
-                title=html.escape(title),
-                pre=self.truncate_pre(text, escape=False))
+                title=html.escape(step.title),
+                pre=self.truncate_pre(step.text, escape=False))
         self.emit(
             '    </article>\n')
 
