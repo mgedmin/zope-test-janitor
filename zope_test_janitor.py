@@ -5,7 +5,7 @@ Usage: zope-test-janitor < email.txt
 Pipe an email from the Zope tests summarizer to it, get back an HTML report.
 """
 
-__version__ = '0.3'
+__version__ = '0.3.1'
 __author__ = 'Marius Gedminas <marius@gedmin.as>'
 __url__ = 'https://gist.github.com/mgedmin/4995950'
 __licence__ = 'GPL v2 or later' # or ask me for MIT
@@ -64,14 +64,16 @@ def cache_filename(url):
     return os.path.join(CACHE_DIR, quote(url, safe=''))
 
 
-ONE_DAY = 24*60*60 # seconds
+ONE_HOUR = 60*60 # seconds
+ONE_DAY = 24*ONE_HOUR
 
 
 def get_from_cache(filename, max_age):
     try:
         with open(filename, 'rb') as f:
             mtime = os.fstat(f.fileno()).st_mtime
-            if time.time() - mtime > max_age:
+            age = time.time() - mtime
+            if age > max_age:
                 return None
             return f.read()
     except IOError:
@@ -103,8 +105,8 @@ def cached_get(url, max_age=ONE_DAY):
     return body
 
 
-def parse(url):
-    body = cached_get(url)
+def parse(url, max_age=ONE_DAY):
+    body = cached_get(url, max_age=max_age)
     if not body:
         return lxml.html.Element('html')
     return lxml.html.fromstring(body.decode(), base_url=url)
@@ -153,9 +155,14 @@ class Failure(object):
             self.last_build_steps, self.last_build_number = \
                     self.parse_buildbot(self.last_build_link,
                                         skip_if=self.build_number,
+                                        max_age=ONE_HOUR,
                                         normalize_url=True)
             self.last_build_successful = self.buildbot_success(
                 self.last_build_steps)
+            if int(self.last_build_number) < int(self.build_number):
+                log.warning("Last build (%s) older than current build (%s)?!\n%s",
+                            self.last_build_number, self.build_number,
+                            self.last_build_link)
         if self.is_jenkins_link(first_link):
             self.build_link, self.build_number = self.parse_jenkins_link(
                 first_link, latest=False)
@@ -163,7 +170,7 @@ class Failure(object):
                 first_link, latest=True)
             self.console_text = self.parse_jenkins(self.build_link)
             self.last_build_number = self.parse_jenkins_build_number(
-                self.last_build_link)
+                self.last_build_link, max_age=ONE_HOUR)
             if self.last_build_number != self.build_number:
                 url = self.normalize_jenkins_url(self.last_build_link,
                                                  self.last_build_number)
@@ -197,8 +204,9 @@ class Failure(object):
         assert build_number.isdigit()
         return url.rpartition('/')[0] + '/%s' % build_number
 
-    def parse_buildbot(self, url, skip_if=None, normalize_url=False):
-        etree = parse(url)
+    def parse_buildbot(self, url, skip_if=None, normalize_url=False,
+                       max_age=ONE_DAY):
+        etree = parse(url, max_age=max_age)
         title = etree.xpath('//title/text()')[0]
         build_number = title.rpartition('#')[-1]
         steps = []
@@ -242,15 +250,15 @@ class Failure(object):
         assert build_number.isdigit()
         return url.rpartition('/')[0].rpartition('/')[0] + '/%s/' % build_number
 
-    def parse_jenkins_build_number(self, url):
-        etree = parse(url)
+    def parse_jenkins_build_number(self, url, max_age=ONE_HOUR):
+        etree = parse(url, max_age=max_age)
         title = etree.xpath('//title/text()')[0]
         build_number = title.rpartition('#')[-1].partition(' ')[0]
         return build_number
 
-    def parse_jenkins(self, url):
+    def parse_jenkins(self, url, max_age=ONE_DAY):
         # url is '.../buildnumber/', i.e. has a trailing slash
-        return cached_get(url + 'consoleText').decode()
+        return cached_get(url + 'consoleText', max_age=max_age).decode()
 
     def jenkins_success(self, console_text):
         return console_text.rstrip().endswith('Finished: SUCCESS')
