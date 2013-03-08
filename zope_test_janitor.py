@@ -576,6 +576,8 @@ def main():
     parser = argparse.ArgumentParser(
         description=__doc__.strip().partition('\n\n')[-1])
     parser.add_argument('files', metavar='filename', nargs='*')
+    parser.add_argument('--version', action='version',
+                        version="%(prog)s version " + __version__)
     parser.add_argument('-v', '--verbose', action='count', default=1)
     parser.add_argument('-q', '--quiet', action='count', default=0)
     parser.add_argument('--selftest', action='store_true')
