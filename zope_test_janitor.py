@@ -454,10 +454,36 @@ class Report:
 
     def format_console_text(self, text):
         return '<pre>{}</pre>'.format(
-            re.sub(r'^(Traceback.*(\n .*)*\n[^ ].*)',
-                   r'<span class="error">\1</span>',
-                   html.escape(text),
-                   flags=re.MULTILINE))
+            re.sub(r'^([+].*)',
+                   r'<span class="section">\1</span>',
+                   re.sub(r'^(Traceback.*(\n .*)*\n[^ ].*)',
+                          r'<span class="error">\1</span>',
+                          html.escape(text),
+                          flags=re.MULTILINE,
+                         ),
+                      flags=re.MULTILINE,
+                  )
+        )
+
+    def split_to_sections(self, lines):
+        pending = []
+        result = []
+        for line in lines:
+            if line.startswith('<span class="section">'):
+                if pending:
+                    result.append(pending)
+                    pending = []
+            pending.append(line)
+        if pending:
+            result.append(pending)
+        return result
+
+    def collapsed_text(self, lines):
+        return ('<span class="collapsible collapsed">({} more lines)</span>'
+                    .format(len(lines)) +
+                '<article>' +
+                ''.join(lines) +
+                '</article>')
 
     def truncate_pre(self, pre, first=4, last=30, min_middle=5):
         lines = pre.splitlines(True)
@@ -466,13 +492,14 @@ class Report:
         first_bit = lines[:first]
         middle_bit = lines[first:-last]
         last_bit = lines[-last:]
-        return (''.join(first_bit) +
-                '<span class="collapsible collapsed">({} more lines)</span>'
-                    .format(len(middle_bit)) +
-                '<article>' +
-                ''.join(middle_bit) +
-                '</article>' +
-                ''.join(last_bit))
+        result = first_bit
+        for section in self.split_to_sections(middle_bit):
+            if section[0].startswith('<span class="section">'):
+                result += [section[0], self.collapsed_text(section[1:])]
+            else:
+                result += [self.collapsed_text(section)]
+        result += last_bit
+        return ''.join(result)
 
     def format_buildbot_steps(self, steps):
         return ' '.join('<a class="{css_class}" href="{url}">{title}</a>'
@@ -654,7 +681,7 @@ def main():
 
 
 def test_suite():
-    return doctest.DocTestSuite()
+    return doctest.DocTestSuite(optionflags=doctest.REPORT_NDIFF)
 
 
 def doctest_DATE_PATTERN():
@@ -785,7 +812,7 @@ def doctest_Report_format_console_text():
         ... '''
         >>> print(report.format_console_text(text))
         <pre>
-        + bin/test
+        <span class="section">+ bin/test</span>
         blah blah blah
         also &lt;hehe markup&gt; &amp; stuff
         when suddenly
@@ -795,6 +822,43 @@ def doctest_Report_format_console_text():
         Exception: something happen!</span>
         and continued
         </pre>
+
+    """
+
+def doctest_Report_split_to_sections():
+    """Test for Report.split_to_sections
+
+        >>> report = Report()
+        >>> text = '''
+        ... blah
+        ... <span class="section">+ bin/test</span>
+        ... blah blah blah
+        ... more blah
+        ... <span class="section">+ bin/test --more</span>
+        ... blah blah
+        ... etc.
+        ... '''.lstrip()
+        >>> from pprint import pprint
+        >>> pprint(report.split_to_sections(text.splitlines()), width=40)
+        [['blah'],
+         ['<span class="section">+ bin/test</span>',
+          'blah blah blah',
+          'more blah'],
+         ['<span class="section">+ bin/test --more</span>',
+          'blah blah',
+          'etc.']]
+
+    """
+
+def doctest_Report_collapsed_text():
+    r"""Test for Report.collapsed_text
+
+        >>> report = Report()
+        >>> print(report.collapsed_text(['a\n', 'b\n', 'c\n']))
+        <span class="collapsible collapsed">(3 more lines)</span><article>a
+        b
+        c
+        </article>
 
     """
 
