@@ -5,7 +5,7 @@ Usage: zope-test-janitor [-v|-q] [filename]
 Pipe an email from the Zope tests summarizer to it, get back an HTML report.
 """
 
-__version__ = '0.4'
+__version__ = '0.4.1'
 __author__ = 'Marius Gedminas <marius@gedmin.as>'
 __url__ = 'https://gist.github.com/mgedmin/4995950'
 __licence__ = 'GPL v2 or later' # or ask me for MIT
@@ -58,6 +58,8 @@ KNOWN_FAILURES = [
      "bad jenkins config"),
     ("ERROR: 'xslt-config' is not recognized as an internal or external command",
      "no lxml on winbot"),
+    ("A    MOVED_TO_GITHUB",
+     "moved to Github"),
 ]
 
 
