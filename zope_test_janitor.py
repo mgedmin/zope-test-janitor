@@ -481,8 +481,14 @@ class Report:
         return result
 
     def collapsed_text(self, lines):
-        return ('<span class="collapsible collapsed">({} more lines)</span>'
-                    .format(len(lines)) +
+        n_errors = sum(1 for line in lines if '<span class="error">' in line)
+        title = '%d more lines' % len(lines)
+        if n_errors == 1:
+            title += ' and 1 error'
+        elif n_errors:
+            title += ' and %d errors' % n_errors
+        return ('<span class="collapsible collapsed">({})</span>'
+                    .format(title) +
                 '<article>' +
                 ''.join(lines) +
                 '</article>')
