@@ -5,7 +5,7 @@ Usage: zope-test-janitor [-v|-q] [filename]
 Pipe an email from the Zope tests summarizer to it, get back an HTML report.
 """
 
-__version__ = '0.4.2'
+__version__ = '0.4.3'
 __author__ = 'Marius Gedminas <marius@gedmin.as>'
 __url__ = 'https://gist.github.com/mgedmin/4995950'
 __licence__ = 'GPL v2 or later' # or ask me for MIT
@@ -177,7 +177,7 @@ class Failure(object):
             self.console_text = self.parse_jenkins(self.build_link)
             self.last_build_number = self.parse_jenkins_build_number(
                 self.last_build_link, max_age=ONE_HOUR)
-            if self.last_build_number != self.build_number:
+            if self.last_build_number and self.last_build_number != self.build_number:
                 url = self.normalize_jenkins_url(self.last_build_link,
                                                  self.last_build_number)
                 self.last_console_text = self.parse_jenkins(url)
@@ -272,7 +272,10 @@ class Failure(object):
 
     def parse_jenkins_build_number(self, url, max_age=ONE_HOUR):
         etree = parse(url, max_age=max_age)
-        title = etree.xpath('//title/text()')[0]
+        try:
+            title = etree.xpath('//title/text()')[0]
+        except IndexError:
+            return None
         build_number = title.rpartition('#')[-1].partition(' ')[0]
         return build_number
 
@@ -610,7 +613,8 @@ class Report:
             for n, failure in enumerate(self.failures, 1):
                 self.failure_header(failure, 'f{}'.format(n))
                 self.summary_email(failure)
-                have_last_build = failure.last_build_number != failure.build_number
+                have_last_build = (failure.last_build_number and
+                                   failure.last_build_number != failure.build_number)
                 if failure.console_text:
                     self.console_text('Console text from <a href="{url}">{build}</a>:',
                                       build='build #%s' % failure.build_number,
