@@ -17,6 +17,7 @@ import html
 import logging
 import os
 import re
+import socket
 import sys
 import tempfile
 import textwrap
@@ -656,6 +657,7 @@ def main():
                         version="%(prog)s version " + __version__)
     parser.add_argument('-v', '--verbose', action='count', default=1)
     parser.add_argument('-q', '--quiet', action='count', default=0)
+    parser.add_argument('--timeout', type=float, default=30)
     parser.add_argument('--selftest', action='store_true')
     parser.add_argument('--pdb', action='store_true')
     parser.add_argument('--pm', action='store_true')
@@ -674,6 +676,8 @@ def main():
     root.setLevel(logging.ERROR if verbosity < 1 else
                   logging.INFO if verbosity == 1 else
                   logging.DEBUG)
+
+    socket.setdefaulttimeout(args.timeout)
 
     report = Report()
     summary_email = list(fileinput.input(args.files))
