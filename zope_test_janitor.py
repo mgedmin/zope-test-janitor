@@ -73,6 +73,10 @@ KNOWN_FAILURES = [
      "no lxml on winbot"),
     ("A    MOVED_TO_GITHUB",
      "moved to Github"),
+    (r"IOError: [Errno 2] No such file or directory: 'setuptools\\cli.exe'",
+     "distribute issue #376"),
+    (r"IOError: [Errno 0] Error: 'setuptools\\cli.exe'",
+     "distribute issue #376"),
 ]
 
 
