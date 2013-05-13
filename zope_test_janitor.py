@@ -1,11 +1,12 @@
-#!/usr/bin/python3
+#!/usr/bin/python
+# -*- coding: UTF-8 -*-
 """
 Usage: zope-test-janitor [-v|-q] [filename]
 
 Pipe an email from the Zope tests summarizer to it, get back an HTML report.
 """
 
-__version__ = '0.4.3'
+__version__ = '0.5.0'
 __author__ = 'Marius Gedminas <marius@gedmin.as>'
 __url__ = 'https://gist.github.com/mgedmin/4995950'
 __licence__ = 'GPL v2 or later' # or ask me for MIT
@@ -13,7 +14,6 @@ __licence__ = 'GPL v2 or later' # or ask me for MIT
 import argparse
 import doctest
 import fileinput
-import html
 import logging
 import os
 import re
@@ -25,9 +25,21 @@ import time
 import unittest
 import webbrowser
 from collections import namedtuple
-from urllib.request import urlopen
-from urllib.parse import quote, urljoin
-from urllib.error import HTTPError
+from contextlib import closing
+
+try:
+    from urllib.request import urlopen
+    from urllib.parse import quote, urljoin
+    from urllib.error import HTTPError
+except ImportError:
+    from urllib import urlopen, quote
+    from urlparse import urljoin
+    HTTPError = IOError
+
+try:
+    from html import escape
+except ImportError:
+    from cgi import escape
 
 import lxml.html
 
@@ -87,7 +99,7 @@ def get_from_cache(filename, max_age):
 def get(url):
     try:
         log.info('Downloading %s', url)
-        with urlopen(url) as f:
+        with closing(urlopen(url)) as f:
             return f.read()
     except HTTPError as e:
         log.debug('Download of %s failed: %s', url, e)
@@ -113,7 +125,7 @@ def parse(url, max_age=ONE_DAY):
     body = cached_get(url, max_age=max_age)
     if not body:
         return lxml.html.Element('html')
-    return lxml.html.fromstring(body.decode(), base_url=url)
+    return lxml.html.fromstring(body.decode('UTF-8'), base_url=url)
 
 
 def tostring(etree):
@@ -242,11 +254,11 @@ class Failure(object):
         if len(step_meta) >= 1:
             first_line = step_meta[0].text.split('\n')[0].rstrip()
             command_line = '<span class="header">{}</span>\n'.format(
-                html.escape(first_line))
+                escape(first_line))
         if len(step_meta) >= 2:
             first_line = step_meta[-1].text.split('\n')[0].rstrip()
             exit_status = '<span class="header">{}</span>\n'.format(
-                html.escape(first_line))
+                escape(first_line))
         return '<pre>{}</pre>'.format(''.join(
             [command_line] + list(map(tostring, spans)) + [exit_status]))
 
@@ -464,7 +476,7 @@ class Report:
                    r'<span class="section">\1</span>',
                    re.sub(r'^(Traceback.*(\n .*)*\n[^ ].*|ERROR:.*)',
                           r'<span class="error">\1</span>',
-                          html.escape(text),
+                          escape(text),
                           flags=re.MULTILINE,
                          ),
                       flags=re.MULTILINE,
@@ -515,9 +527,9 @@ class Report:
 
     def format_buildbot_steps(self, steps):
         return ' '.join('<a class="{css_class}" href="{url}">{title}</a>'
-                                .format(title=html.escape(step.title),
-                                        css_class=html.escape(step.css_class),
-                                        url=html.escape(step.link))
+                                .format(title=escape(step.title),
+                                        css_class=escape(step.css_class),
+                                        url=escape(step.link))
                         for step in steps)
 
     def emit(self, html, **kw):
@@ -535,7 +547,7 @@ class Report:
               </head>
             <body>
               <h1>{title}</h1>
-        '''), title=html.escape(title), css=CSS, jquery=JQUERY_URL, js=JAVASCRIPT)
+        '''), title=escape(title), css=CSS, jquery=JQUERY_URL, js=JAVASCRIPT)
 
     def failure_header(self, failure, id):
         title = failure.title
@@ -549,13 +561,13 @@ class Report:
             '  <article>\n',
             id=id,
             css_class="collapsible collapsed" if failure.tag else "collapsible",
-            title=html.escape(title))
+            title=escape(title))
 
     def summary_email(self, failure):
         self.emit(
             '    <p class="{css_class}"><a href="{url}">Summary email</a></p>\n'
             '    <article>{pre}</article>\n',
-            url=html.escape(failure.url),
+            url=escape(failure.url),
             css_class="collapsible collapsed"
                             if failure.buildbot_steps or failure.console_text
                             else "collapsible",
@@ -588,7 +600,7 @@ class Report:
                 '    <article>{pre}</article>\n',
                 css_class="collapsible" if "failure" in step.css_class
                                         else "collapsible collapsed",
-                title=html.escape(step.title),
+                title=escape(step.title),
                 pre=self.truncate_pre(step.text))
         self.emit(
             '    </article>\n')
