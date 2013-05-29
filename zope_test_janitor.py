@@ -77,6 +77,8 @@ KNOWN_FAILURES = [
      "distribute issue #376"),
     (r"IOError: [Errno 0] Error: 'setuptools\\cli.exe'",
      "distribute issue #376"),
+    (re.compile(r"pkg_resources\.VersionConflict: \(setuptools .*, Requirement\.parse\('setuptools&gt;=0\.7b'\)\)"),
+     "setuptools issue #5"), # https://bitbucket.org/pypa/setuptools/issue/5/distribute_setuppy-fails-with
 ]
 
 
@@ -326,8 +328,12 @@ class Failure(object):
         if not text:
             return
         for sign, tag in KNOWN_FAILURES:
-            if sign in text:
-                self.tag = tag
+            if hasattr(sign, 'search'): # regexp!
+                if sign.search(text):
+                    self.tag = tag
+            else:
+                if sign in text:
+                    self.tag = tag
 
 
 CSS = """
