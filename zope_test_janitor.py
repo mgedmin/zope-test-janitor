@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 # -*- coding: UTF-8 -*-
 """
 Usage: zope-test-janitor [-v|-q] [filename]
@@ -6,7 +6,7 @@ Usage: zope-test-janitor [-v|-q] [filename]
 Pipe an email from the Zope tests summarizer to it, get back an HTML report.
 """
 
-__version__ = '0.5.0'
+__version__ = '0.5.1'
 __author__ = 'Marius Gedminas <marius@gedmin.as>'
 __url__ = 'https://gist.github.com/mgedmin/4995950'
 __licence__ = 'GPL v2 or later' # or ask me for MIT
@@ -300,7 +300,7 @@ class Failure(object):
 
     def parse_jenkins(self, url, max_age=ONE_DAY):
         # url is '.../buildnumber/', i.e. has a trailing slash
-        return cached_get(url + 'consoleText', max_age=max_age).decode()
+        return cached_get(url + 'consoleText', max_age=max_age).decode('UTF-8', 'replace')
 
     def jenkins_success(self, console_text):
         return console_text.rstrip().endswith('Finished: SUCCESS')
