@@ -522,7 +522,7 @@ class Report:
                 '</article>')
 
     def truncate_pre(self, pre, first=4, last=30, min_middle=5):
-        lines = pre.splitlines(True)
+        lines = pre.strip().splitlines(True)
         if len(lines) < first+min_middle+last:
             return pre
         first_bit = lines[:first]
@@ -899,6 +899,35 @@ def doctest_Report_collapsed_text():
         b
         c
         </article>
+
+    """
+
+def doctest_Report_truncate_pre():
+    r"""Test for Report.truncate_pre
+
+        >>> report = Report()
+        >>> pre = '''<pre>Here
+        ... is
+        ... some
+        ... text:
+        ... a
+        ... b
+        ... c
+        ... d
+        ... e</pre>
+        ...
+        ...
+        ... '''
+        >>> print(report.truncate_pre(pre, first=4, min_middle=1, last=1))
+        <pre>Here
+        is
+        some
+        text:
+        <span class="collapsible collapsed">(4 more lines)</span><article>a
+        b
+        c
+        d
+        </article>e</pre>
 
     """
 
