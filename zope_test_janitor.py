@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/python
 # -*- coding: UTF-8 -*-
 """
 Usage: zope-test-janitor [-v|-q] [filename]
@@ -6,7 +6,9 @@ Usage: zope-test-janitor [-v|-q] [filename]
 Pipe an email from the Zope tests summarizer to it, get back an HTML report.
 """
 
-__version__ = '0.5.1'
+from __future__ import unicode_literals
+
+__version__ = '0.5.2'
 __author__ = 'Marius Gedminas <marius@gedmin.as>'
 __url__ = 'https://gist.github.com/mgedmin/4995950'
 __licence__ = 'GPL v2 or later' # or ask me for MIT
@@ -543,7 +545,7 @@ class Report:
                         for step in steps)
 
     def emit(self, html, **kw):
-        self.f.write(html.format(**kw))
+        self.f.write(html.format(**kw).encode('UTF-8'))
 
     def page_header(self, title):
         self.emit(textwrap.dedent('''\
@@ -729,7 +731,7 @@ def doctest_DATE_PATTERN():
         >>> m is not None
         True
         >>> list(m.groups())
-        ['today']
+        [u'today']
 
         >>> m = DATE_PATTERN.match(' Date: today')
         >>> m is None
@@ -743,7 +745,7 @@ def doctest_TITLE_PATTERN():
         >>> m is not None
         True
         >>> list(m.groups())
-        ['[42] FAIL everything is bad']
+        [u'[42] FAIL everything is bad']
 
         >>> m = TITLE_PATTERN.match(
         ...     'Anything else')
@@ -760,7 +762,7 @@ def doctest_URL_PATTERN():
         >>> m is not None
         True
         >>> list(m.groups())
-        ['https://mail.zope.org/pipermail/zope-tests/whatever.html']
+        [u'https://mail.zope.org/pipermail/zope-tests/whatever.html']
 
         >>> m = URL_PATTERN.match(
         ...     'https://mail.zope.org/pipermail/zope-tests/whatever.html')
@@ -786,10 +788,10 @@ def doctest_Failure_parse_buildbot_link():
 
         >>> f = Failure(None, None)
         >>> f.parse_buildbot_link('http://winbot.zope.org/builders/z3c.authenticator_py_265_32/builds/185', latest=False)
-        ('http://winbot.zope.org/builders/z3c.authenticator_py_265_32/builds/185', '185')
+        (u'http://winbot.zope.org/builders/z3c.authenticator_py_265_32/builds/185', u'185')
 
         >>> f.parse_buildbot_link('http://winbot.zope.org/builders/z3c.authenticator_py_265_32/builds/185', latest=True)
-        ('http://winbot.zope.org/builders/z3c.authenticator_py_265_32/builds/-1', 'latest')
+        (u'http://winbot.zope.org/builders/z3c.authenticator_py_265_32/builds/-1', u'latest')
 
     """
 
@@ -812,10 +814,10 @@ def doctest_Failure_parse_jenkins_link():
 
         >>> f = Failure(None, None)
         >>> f.parse_jenkins_link('http://jenkins.starzel.de/job/zopetoolkit_trunk/184/', latest=False)
-        ('http://jenkins.starzel.de/job/zopetoolkit_trunk/184/', '184')
+        (u'http://jenkins.starzel.de/job/zopetoolkit_trunk/184/', u'184')
 
         >>> f.parse_jenkins_link('http://jenkins.starzel.de/job/zopetoolkit_trunk/184/', latest=True)
-        ('http://jenkins.starzel.de/job/zopetoolkit_trunk/lastBuild/', 'latest')
+        (u'http://jenkins.starzel.de/job/zopetoolkit_trunk/lastBuild/', u'latest')
 
     """
 
@@ -829,7 +831,7 @@ def doctest_Report_parse_email():
         ...     ' https://mail.zope.org/pipermail/zope-tests/whatever.html\n',
         ... ])
         >>> report.failures
-        [Failure('[1] FAIL: everything', 'https://mail.zope.org/pipermail/zope-tests/whatever.html')]
+        [Failure(u'[1] FAIL: everything', u'https://mail.zope.org/pipermail/zope-tests/whatever.html')]
 
     """
 
@@ -878,13 +880,13 @@ def doctest_Report_split_to_sections():
         ... '''.lstrip()
         >>> from pprint import pprint
         >>> pprint(report.split_to_sections(text.splitlines()), width=40)
-        [['blah'],
-         ['<span class="section">+ bin/test</span>',
-          'blah blah blah',
-          'more blah'],
-         ['<span class="section">+ bin/test --more</span>',
-          'blah blah',
-          'etc.']]
+        [[u'blah'],
+         [u'<span class="section">+ bin/test</span>',
+          u'blah blah blah',
+          u'more blah'],
+         [u'<span class="section">+ bin/test --more</span>',
+          u'blah blah',
+          u'etc.']]
 
     """
 
