@@ -81,6 +81,8 @@ KNOWN_FAILURES = [
      "distribute issue #376"),
     (re.compile(r"pkg_resources\.VersionConflict: \(setuptools .*, Requirement\.parse\('setuptools&gt;=0\.7b'\)\)"),
      "setuptools issue #5"), # https://bitbucket.org/pypa/setuptools/issue/5/distribute_setuppy-fails-with
+    (re.compile("Error: There is a version conflict.\s+We already have: webtest \d"),
+     "webtest version conflict"),
 ]
 
 
