@@ -8,7 +8,7 @@ Pipe an email from the Zope tests summarizer to it, get back an HTML report.
 
 from __future__ import unicode_literals
 
-__version__ = '0.5.2'
+__version__ = '0.5.3'
 __author__ = 'Marius Gedminas <marius@gedmin.as>'
 __url__ = 'https://gist.github.com/mgedmin/4995950'
 __licence__ = 'GPL v2 or later' # or ask me for MIT
@@ -83,6 +83,8 @@ KNOWN_FAILURES = [
      "setuptools issue #5"), # https://bitbucket.org/pypa/setuptools/issue/5/distribute_setuppy-fails-with
     (re.compile("Error: There is a version conflict.\s+We already have: webtest \d"),
      "webtest version conflict"),
+    ('fatal: unable to connect to github.com:',
+     "github unreachable"),
 ]
 
 
