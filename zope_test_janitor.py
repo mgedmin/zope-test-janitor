@@ -8,7 +8,7 @@ Pipe an email from the Zope tests summarizer to it, get back an HTML report.
 
 from __future__ import unicode_literals
 
-__version__ = '0.5.3'
+__version__ = '0.6.0'
 __author__ = 'Marius Gedminas <marius@gedmin.as>'
 __url__ = 'https://gist.github.com/mgedmin/4995950'
 __licence__ = 'GPL v2 or later' # or ask me for MIT
