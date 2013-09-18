@@ -156,11 +156,13 @@ class Failure(object):
     # if buildbot/jenkins detected:
     build_number = None             # number of the build
     build_link = None               # link to build page
+    build_source = None             # source tree infomration of the build
     console_text = None             # console output, if jenkins
     buildbot_steps = None           # list of buildbot steps, if buildbot
     # peeking to the future
     last_build_link = None          # link to last build page
     last_build_number = None        # number of the last build
+    last_build_source = None        # source tree infomration of the last build
     last_console_text = None        # console output, if jenkins
     last_build_steps = None         # list of buildbot steps, if buildbot
     last_build_successful = None    # was the last build successful?
@@ -183,12 +185,16 @@ class Failure(object):
                 first_link, latest=True)
             self.buildbot_steps, self.build_number = \
                     self.parse_buildbot(self.build_link)
+            self.build_source = self.buildbot_source(
+                self.buildbot_steps)
             self.last_build_steps, self.last_build_number = \
                     self.parse_buildbot(self.last_build_link,
                                         skip_if=self.build_number,
                                         max_age=ONE_HOUR,
                                         normalize_url=True)
             self.last_build_successful = self.buildbot_success(
+                self.last_build_steps)
+            self.last_build_source = self.buildbot_source(
                 self.last_build_steps)
             if int(self.last_build_number) < int(self.build_number):
                 log.warning("Last build (%s) older than current build (%s)?!\n%s",
@@ -278,6 +284,25 @@ class Failure(object):
         return steps and all(step.css_class == "success result"
                              for step in steps)
 
+    def buildbot_source(self, steps):
+        github_rx = re.compile('From [a-z]+://github[.]com/([a-zA-Z0-9_.]+/[a-zA-Z0-9_.]+)')
+        commit_rx = re.compile('HEAD is now at ([0-9a-f]+)')
+        github_repo = commit = None
+        for step in steps:
+            if step.title == 'git':
+                m = github_rx.search(step.text)
+                if m:
+                    github_repo = m.group(1)
+                    if github_repo.endswith('.git'):
+                        github_repo = github_repo[:-len('.git')]
+                m = commit_rx.search(step.text)
+                if m:
+                    commit = m.group(1)
+        if github_repo and commit:
+            return GitHubSource(github_repo, commit)
+        else:
+            return None
+
     def is_jenkins_link(self, url):
         return bool(url and JENKINS_URL.match(url))
 
@@ -340,6 +365,23 @@ class Failure(object):
             else:
                 if sign in text:
                     self.tag = tag
+
+
+class GitHubSource(object):
+
+    def __init__(self, repo, commit):
+        self.repo = repo
+        self.commit = commit
+
+    def get_revision(self):
+        return 'commit %s' % self.commit
+
+    def get_url(self):
+        return 'https://github.com/{repo}/commit/{commit}'.format(
+            repo=self.repo, commit=self.commit)
+
+    def __repr__(self):
+        return '%s(%r, %r)' % (self.__class__.__name__, self.repo, self.commit)
 
 
 CSS = """
@@ -548,6 +590,14 @@ class Report:
                                         url=escape(step.link))
                         for step in steps)
 
+    def format_source(self, source, prefix='', suffix=''):
+        if not source:
+            return ''
+        return '{prefix}<a href="{url}">{revision}</a>{suffix}'.format(
+            prefix=prefix, suffix=suffix,
+            url=source.get_url(),
+            revision=source.get_revision())
+
     def emit(self, html, **kw):
         self.f.write(html.format(**kw).encode('UTF-8'))
 
@@ -600,15 +650,17 @@ class Report:
             console_text=self.truncate_pre(self.format_console_text(text)),
             **kw)
 
-    def buildbot_steps(self, title, build, url, steps, collapsed=False, **kw):
+    def buildbot_steps(self, title, build, url, steps, collapsed=False,
+                       source=None, **kw):
         self.emit(
-            '    <p class="{css_class}">%s</p>'
+            '    <p class="{css_class}">%s{source}</p>'
             '    <article class="steps">\n' % title,
             css_class="collapsible collapsed" if collapsed
                             else "collapsible",
             build=build,
             url=url,
             steps=self.format_buildbot_steps(steps),
+            source=self.format_source(source, prefix=' (', suffix=')'),
             **kw)
         for step in steps:
             self.emit(
@@ -662,6 +714,7 @@ class Report:
                     self.buildbot_steps('Buildbot steps from <a href="{url}">{build}</a>: {steps}',
                                         build='build #%s' % failure.build_number,
                                         url=failure.build_link,
+                                        source=failure.build_source,
                                         steps=failure.buildbot_steps,
                                         collapsed=have_last_build)
                     if have_last_build:
@@ -670,6 +723,7 @@ class Report:
                                             successful="successful" if failure.last_build_successful
                                                        else "also unsuccessful",
                                             url=failure.last_build_link,
+                                            source=failure.last_build_source,
                                             steps=failure.last_build_steps,
                                             collapsed=failure.last_build_successful)
                 self.failure_footer()
@@ -825,6 +879,28 @@ def doctest_Failure_parse_jenkins_link():
 
     """
 
+def doctest_Failure_buildbot_source():
+    """Test for Failure.buildbot_source
+
+        >>> f = Failure(None, None)
+        >>> f.buildbot_source([])
+
+        >>> f.buildbot_source([BuildStep(title='git', link=None, css_class='',
+        ...                              text='''
+        ... <pre><span class="header">starting git operation</span>
+        ... <span class="stderr">From git://github.com/zopefoundation/ZODB
+        ...  * branch            HEAD       -&gt; FETCH_HEAD
+        ... </span><span class="stdout">HEAD is now at 6b484f8 Correctly quote Windows pathnames
+        ... </span><span class="stderr">warning: refname 'HEAD' is ambiguous.
+        ... </span><span class="stdout">6b484f8a2ce6cd627139cd6a2c8e9219ecf0ecf2
+        ... </span><span class="stderr">warning: refname 'HEAD' is ambiguous.
+        ... </span><span class="header">elapsedTime=0.407000</span>
+        ... </pre>
+        ... ''')])
+        GitHubSource(u'zopefoundation/ZODB', u'6b484f8')
+
+    """
+
 def doctest_Report_parse_email():
     r"""
 
@@ -836,6 +912,18 @@ def doctest_Report_parse_email():
         ... ])
         >>> report.failures
         [Failure(u'[1] FAIL: everything', u'https://mail.zope.org/pipermail/zope-tests/whatever.html')]
+
+    """
+
+def doctest_Report_format_source():
+    """Test for Report.format_source
+
+        >>> report = Report()
+        >>> report.format_source(None, prefix='lalala')
+        u''
+
+        >>> report.format_source(GitHubSource(u'zopefoundation/ZODB', u'6b484f8'), prefix=' (', suffix=')')
+        u' (<a href="https://github.com/zopefoundation/ZODB/commit/6b484f8">commit 6b484f8</a>)'
 
     """
 
