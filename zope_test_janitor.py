@@ -8,7 +8,7 @@ Pipe an email from the Zope tests summarizer to it, get back an HTML report.
 
 from __future__ import unicode_literals
 
-__version__ = '0.6.0'
+__version__ = '0.6.1'
 __author__ = 'Marius Gedminas <marius@gedmin.as>'
 __url__ = 'https://gist.github.com/mgedmin/4995950'
 __licence__ = 'GPL v2 or later' # or ask me for MIT
@@ -218,7 +218,10 @@ class Failure(object):
 
     def parse_email(self, url):
         etree = parse(url)
-        pre = tostring(etree.xpath('//pre')[0])
+        try:
+            pre = tostring(etree.xpath('//pre')[0])
+        except IndexError:
+            return ('', None)
         links = etree.xpath('//pre/a')
         if links:
             return (pre, links[0].get('href'))
