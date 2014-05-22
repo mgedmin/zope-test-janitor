@@ -126,6 +126,8 @@ def cached_get(url, max_age=ONE_DAY):
             log.debug('Creating cache directory %s', CACHE_DIR)
             os.makedirs(CACHE_DIR)
         body = get(url)
+        if not body:
+            log.warning('Got an empty response for %s', url)
         with open(fn, 'wb') as f:
             f.write(body)
     else:
