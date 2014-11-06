@@ -128,10 +128,11 @@ def cached_get(url, max_age=ONE_DAY):
         body = get(url)
         if not body:
             log.warning('Got an empty response for %s', url)
-        with open(fn, 'wb') as f:
-            f.write(body)
+        else:
+            with open(fn, 'wb') as f:
+                f.write(body)
     else:
-        log.debug('Using cached copy of %s', url)
+        log.debug('Using cached copy of %s from %s', url, fn)
     return body
 
 
@@ -187,6 +188,9 @@ class Failure(object):
                 first_link, latest=True)
             self.buildbot_steps, self.build_number = \
                     self.parse_buildbot(self.build_link)
+            if self.build_number is None:
+                log.error("Cannot analyze the failure at %s", self.build_link)
+                return
             self.build_source = self.buildbot_source(
                 self.buildbot_steps)
             self.last_build_steps, self.last_build_number = \
@@ -194,6 +198,9 @@ class Failure(object):
                                         skip_if=self.build_number,
                                         max_age=ONE_HOUR,
                                         normalize_url=True)
+            if self.last_build_number is None:
+                log.error("Cannot analyze the failure at %s", self.last_build_url)
+                return
             self.last_build_successful = self.buildbot_success(
                 self.last_build_steps)
             self.last_build_source = self.buildbot_source(
@@ -249,7 +256,11 @@ class Failure(object):
     def parse_buildbot(self, url, skip_if=None, normalize_url=False,
                        max_age=ONE_DAY):
         etree = parse(url, max_age=max_age)
-        title = etree.xpath('//title/text()')[0]
+        try:
+            title = etree.xpath('//title/text()')[0]
+        except IndexError:
+            log.error("Failed to parse %s", url)
+            return [], None
         build_number = title.rpartition('#')[-1]
         steps = []
         if skip_if is not None and build_number == skip_if:
@@ -330,6 +341,7 @@ class Failure(object):
         try:
             title = etree.xpath('//title/text()')[0]
         except IndexError:
+            log.error("Failed to parse %s", url)
             return None
         build_number = title.rpartition('#')[-1].partition(' ')[0]
         return build_number
