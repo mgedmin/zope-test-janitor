@@ -8,7 +8,7 @@ Pipe an email from the Zope tests summarizer to it, get back an HTML report.
 
 from __future__ import unicode_literals
 
-__version__ = '0.6.1'
+__version__ = '0.6.2'
 __author__ = 'Marius Gedminas <marius@gedmin.as>'
 __url__ = 'https://gist.github.com/mgedmin/4995950'
 __licence__ = 'GPL v2 or later' # or ask me for MIT
@@ -85,6 +85,8 @@ KNOWN_FAILURES = [
      "webtest version conflict"),
     ('fatal: unable to connect to github.com:',
      "github unreachable"),
+    (re.compile(r"pkg_resources\.VersionConflict: \(setuptools .*, Requirement\.parse\('setuptools&gt;=3\.3'\)\)"),
+     "needs setuptools >= 3.3"),
 ]
 
 
