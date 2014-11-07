@@ -8,7 +8,7 @@ Pipe an email from the Zope tests summarizer to it, get back an HTML report.
 
 from __future__ import unicode_literals
 
-__version__ = '0.6.2'
+__version__ = '0.6.3'
 __author__ = 'Marius Gedminas <marius@gedmin.as>'
 __url__ = 'https://gist.github.com/mgedmin/4995950'
 __licence__ = 'GPL v2 or later' # or ask me for MIT
@@ -425,6 +425,9 @@ h2 {
   padding: 4px;
   margin: 12px -8px 0 -8px;
 }
+h2.last-build-successful {
+  background: #6d4;
+}
 
 a.headerlink:link,
 a.headerlink:visited {
@@ -638,6 +641,11 @@ class Report:
         title = failure.title
         if failure.tag:
             title += ' - ' + failure.tag
+        css_classes = ['collapsible']
+        if failure.tag:
+            css_classes += ['collapsed']
+        if failure.last_build_successful:
+            css_classes += ['last-build-successful']
         self.emit(
             '  <h2 id="{id}" class="{css_class}">\n'
             '    {title}\n'
@@ -645,7 +653,7 @@ class Report:
             '  </h2>\n'
             '  <article>\n',
             id=id,
-            css_class="collapsible collapsed" if failure.tag else "collapsible",
+            css_class=" ".join(css_classes),
             title=escape(title))
 
     def summary_email(self, failure):
