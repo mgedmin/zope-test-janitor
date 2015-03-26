@@ -93,6 +93,10 @@ KNOWN_FAILURES = [
      "zc.recipe.egg inconsistent requirements (1.2.0)"),
     ("We already have: zc.recipe.egg 1.3.2",
      "zc.recipe.egg version conflict"),
+    ("ImportError: No module named email",
+     "buildout issue #217"), # https://github.com/buildout/buildout/issues/217
+    (r"error: Setup script exited with error: Setup script exited with error: SandboxViolation: open('build\\bdist.win32\\egg\\pip\\_vendor\\requests\\packages\\urllib3\\packages\\ssl_match_hostname\\_implementation.py', 'wb') {}",
+     "unittest2 weirdness"), # https://github.com/zopefoundation/zope.testrunner/issues/22
 ]
 
 
