@@ -8,7 +8,7 @@ Pipe an email from the Zope tests summarizer to it, get back an HTML report.
 
 from __future__ import unicode_literals
 
-__version__ = '0.6.4'
+__version__ = '0.6.5'
 __author__ = 'Marius Gedminas <marius@gedmin.as>'
 __url__ = 'https://gist.github.com/mgedmin/4995950'
 __licence__ = 'GPL v2 or later' # or ask me for MIT
@@ -211,7 +211,7 @@ class Failure(object):
                                         max_age=ONE_HOUR,
                                         normalize_url=True)
             if self.last_build_number is None:
-                log.error("Cannot analyze the failure at %s", self.last_build_url)
+                log.error("Cannot analyze the failure at %s", self.last_build_link)
                 return
             self.last_build_successful = self.buildbot_success(
                 self.last_build_steps)
@@ -262,7 +262,7 @@ class Failure(object):
 
     def normalize_buildbot_url(self, url, build_number):
         assert url.endswith('/-1')
-        assert build_number.isdigit()
+        assert build_number.isdigit(), (build_number, url)
         return url.rpartition('/')[0] + '/%s' % build_number
 
     def parse_buildbot(self, url, skip_if=None, normalize_url=False,
@@ -274,6 +274,9 @@ class Failure(object):
             log.error("Failed to parse %s", url)
             return [], None
         build_number = title.rpartition('#')[-1]
+        if not build_number.isdigit():
+            log.error("Failed to parse %s", url)
+            return [], None
         steps = []
         if skip_if is not None and build_number == skip_if:
             return steps, build_number
