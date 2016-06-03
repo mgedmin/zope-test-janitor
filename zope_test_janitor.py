@@ -97,6 +97,8 @@ KNOWN_FAILURES = [
      "buildout issue #217"), # https://github.com/buildout/buildout/issues/217
     (r"error: Setup script exited with error: Setup script exited with error: SandboxViolation: open('build\\bdist.win32\\egg\\pip\\_vendor\\requests\\packages\\urllib3\\packages\\ssl_match_hostname\\_implementation.py', 'wb') {}",
      "unittest2 weirdness"), # https://github.com/zopefoundation/zope.testrunner/issues/22
+    ("Downloading https://pypi.io/packages/source/s/setuptools/setuptools-22.0.0.zip",
+     "temporary setuptools.zip 404"),
 ]
 
 
