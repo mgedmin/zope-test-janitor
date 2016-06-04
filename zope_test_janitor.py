@@ -8,11 +8,6 @@ Pipe an email from the Zope tests summarizer to it, get back an HTML report.
 
 from __future__ import unicode_literals
 
-__version__ = '0.6.5'
-__author__ = 'Marius Gedminas <marius@gedmin.as>'
-__url__ = 'https://gist.github.com/mgedmin/4995950'
-__licence__ = 'GPL v2 or later' # or ask me for MIT
-
 import argparse
 import doctest
 import fileinput
@@ -44,6 +39,12 @@ except ImportError:
     from cgi import escape
 
 import lxml.html
+
+
+__version__ = '0.7.0'
+__author__ = 'Marius Gedminas <marius@gedmin.as>'
+__url__ = 'https://gist.github.com/mgedmin/4995950'
+__licence__ = 'GPL v2 or later'  # or ask me for MIT
 
 
 log = logging.getLogger('zope-test-janitor')
@@ -159,6 +160,74 @@ def parse(url, max_age=ONE_DAY):
 
 def tostring(etree):
     return lxml.html.tostring(etree).decode()
+
+
+class Progress(object):
+
+    width = 20
+    full_char = '#'
+    empty_char = '.'
+    pattern = '[{bar}] {cur}/{count}'
+
+    cur = count = drawn = 0
+    drawn = 0
+
+    def __init__(self, stream=sys.stdout):
+        self.stream = stream
+
+    # Progress API
+
+    def update(self, cur, count):
+        self.cur = cur
+        self.count = count
+        self._draw(self._bar())
+
+    def step(self):
+        self.cur += 1
+        if self.cur > self.count:
+            self.count = self.cur
+
+    def stop(self):
+        self.update(0, 0)
+
+    def _bar(self):
+        if not self.count:
+            return ''
+        filled = self.cur * self.width // self.count
+        return self.pattern.format(
+            bar=(self.full_char * filled).ljust(self.width, self.empty_char),
+            cur=self.cur,
+            count=self.count,
+            percent=100.0 * self.cur / self.count)
+
+    def _clear(self):
+        if self.drawn:
+            self.stream.write('\r' + ' ' * self.drawn + '\r')
+            self.drawn = 0
+
+    def _draw(self, text):
+        self._clear()
+        self.stream.write(text)
+        self.stream.flush()
+        self.drawn = len(text)
+
+    # File-like API
+
+    def flush(self):
+        self.stream.flush()
+
+    def isatty(self):
+        return self.stream.isatty()
+
+    def write(self, s):
+        if s:
+            self._clear()
+            self.stream.write(s)
+            if s.endswith('\n'):
+                self._draw(self._bar())
+
+    def writelines(self, seq):
+        self.write(''.join(seq))
 
 
 BuildStep = namedtuple('BuildStep', 'title link css_class text')
@@ -539,9 +608,9 @@ class Report:
         self.date = '<unknown date>'
         self.failures = []
 
-    def analyze(self, email_lines):
+    def analyze(self, email_lines, progress=None):
         self.parse_email(email_lines)
-        self.fetch_emails()
+        self.fetch_emails(progress=progress)
 
     def parse_email(self, email_lines):
         title = '<unknown title>'
@@ -561,9 +630,13 @@ class Report:
                 self.failures.append(Failure(title, url))
                 continue
 
-    def fetch_emails(self):
+    def fetch_emails(self, progress=None):
+        if progress:
+            progress.update(0, len(self.failures))
         for failure in self.failures:
             failure.analyze()
+            if progress:
+                progress.step()
 
     def format_console_text(self, text):
         return '<pre>{}</pre>'.format(
@@ -794,8 +867,9 @@ def main():
     if sys.stdin.isatty() and not args.files:
         parser.error("supply a filename or pipe something to stdin")
 
+    progress = Progress()
     root = logging.getLogger()
-    root.addHandler(logging.StreamHandler(sys.stdout))
+    root.addHandler(logging.StreamHandler(progress))
     verbosity = args.verbose - args.quiet
     root.setLevel(logging.ERROR if verbosity < 1 else
                   logging.INFO if verbosity == 1 else
@@ -806,7 +880,7 @@ def main():
     report = Report()
     summary_email = list(fileinput.input(args.files))
     try:
-        report.analyze(summary_email)
+        report.analyze(summary_email, progress)
     except:
         if args.pdb or args.pm:
             import traceback
@@ -816,6 +890,7 @@ def main():
     if args.pdb:
         import pdb; pdb.set_trace()
     filename = report.write()
+    progress.stop()
     log.debug("Created %s", filename)
     webbrowser.open(filename)
 
