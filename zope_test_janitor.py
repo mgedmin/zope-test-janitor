@@ -100,6 +100,13 @@ KNOWN_FAILURES = [
      "unittest2 weirdness"), # https://github.com/zopefoundation/zope.testrunner/issues/22
     ("Downloading https://pypi.io/packages/source/s/setuptools/setuptools-22.0.0.zip",
      "temporary setuptools.zip 404"),
+    ('TypeError: Class advice impossible in Python3',
+     'obsolete zope.interface syntax'),
+    ('''ERROR: b"'xslt-config' is not recognized as an internal or external command''',
+     'failed to build lxml'),
+    (re.compile("zope[.]testrunner.*print[(]self[.]format_traceback[(]exc_info[)][)].*UnicodeEncodeError: 'charmap' codec can't encode character", flags=re.DOTALL),
+     'zope.testrunner bug #18'),
+
 ]
 
 
