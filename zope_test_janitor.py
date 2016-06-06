@@ -41,7 +41,7 @@ except ImportError:
 import lxml.html
 
 
-__version__ = '0.7.0'
+__version__ = '0.7.1'
 __author__ = 'Marius Gedminas <marius@gedmin.as>'
 __url__ = 'https://github.com/mgedmin/zope-test-janitor'
 __licence__ = 'GPL v2 or later'  # or ask me for MIT
@@ -140,7 +140,7 @@ def get(url):
         return b''
 
 
-def cached_get(url, max_age=ONE_DAY):
+def cached_get(url, max_age=ONE_DAY, retries=3):
     fn = cache_filename(url)
     body = get_from_cache(fn, max_age)
     if body is None:
@@ -149,7 +149,11 @@ def cached_get(url, max_age=ONE_DAY):
             os.makedirs(CACHE_DIR)
         body = get(url)
         if not body:
-            log.warning('Got an empty response for %s', url)
+            if retries:
+                log.warning('Got an empty response for %s, retrying', url)
+                return cached_get(url, max_age=max_age, retries=retries-1)
+            else:
+                log.warning('Got an empty response for %s, giving up', url)
         else:
             with open(fn, 'wb') as f:
                 f.write(body)
