@@ -39,7 +39,7 @@ except ImportError:
 import lxml.html
 
 
-__version__ = '0.7.1'
+__version__ = '0.7.2'
 __author__ = 'Marius Gedminas <marius@gedmin.as>'
 __url__ = 'https://github.com/mgedmin/zope-test-janitor'
 __licence__ = 'GPL v2 or later'  # or ask me for MIT
@@ -858,12 +858,17 @@ class Report:
 def main():
     parser = argparse.ArgumentParser(
         description=__doc__.strip().partition('\n\n')[-1])
-    parser.add_argument('files', metavar='filename', nargs='*')
+    parser.add_argument('files', metavar='filename', nargs='*',
+                        help='emails to parse (default: stdin)')
     parser.add_argument('--version', action='version',
-                        version="%(prog)s version " + __version__)
-    parser.add_argument('-v', '--verbose', action='count', default=1)
-    parser.add_argument('-q', '--quiet', action='count', default=0)
-    parser.add_argument('--timeout', type=float, default=30)
+                        version="%(prog)s version " + __version__,
+                        help='print version number and exit')
+    parser.add_argument('-v', '--verbose', action='count', default=1,
+                        help='increase verbosity')
+    parser.add_argument('-q', '--quiet', action='count', default=0,
+                        help='decrease verbosity')
+    parser.add_argument('--timeout', type=float, default=30,
+                        help='set HTTP timeout in seconds (default: 30)')
     parser.add_argument('--pdb', action='store_true')
     parser.add_argument('--pm', action='store_true')
     args = parser.parse_args()
