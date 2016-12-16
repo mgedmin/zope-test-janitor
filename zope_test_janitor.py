@@ -104,7 +104,8 @@ KNOWN_FAILURES = [
      'failed to build lxml'),
     (re.compile("zope[.]testrunner.*print[(]self[.]format_traceback[(]exc_info[)][)].*UnicodeEncodeError: 'charmap' codec can't encode character", flags=re.DOTALL),
      'zope.testrunner bug #18'),
-
+    ('NotImplementedError: zope.testbrowser.testing.Browser is no longer supported',
+     'zope.testbrowser 5.0.0 backward compat'),
 ]
 
 
